@@ -1,0 +1,5 @@
+01.05.25
+
+Installed Git for Windows. Linked the 'Git' shell with my GitHub account via online authentication.
+
+Need: I need to refine my understanding on installing software, and practice using the Terminal shell.
