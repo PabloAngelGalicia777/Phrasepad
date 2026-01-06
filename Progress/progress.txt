@@ -2,4 +2,6 @@
 
 Installed Git for Windows. Linked the 'Git' shell with my GitHub account via online authentication.
 
-Need: I need to refine my understanding on installing software, and practice using the Terminal shell.
+Need: 
+1) I need to refine my understanding on installing software, and practice using the Terminal shell.
+2) To learn C with WIN32 API
