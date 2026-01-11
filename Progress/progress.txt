@@ -5,3 +5,12 @@ Installed Git for Windows. Linked the 'Git' shell with my GitHub account via onl
 Need: 
 1) I need to refine my understanding on installing software, and practice using the Terminal shell.
 2) To learn C with WIN32 API
+
+01.10.25
+
+Practiced using Windows PowerShell and Git Bash. Used AI to code the GUI app. 
+
+Need:
+1) Read up on how to code the margins, the dividing lines, the writable space within the lines
+2) Read how to scale the mentioned above with the size of the window. 
+3) The first column scales differently to the second column, will look nice.
