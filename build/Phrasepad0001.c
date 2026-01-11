@@ -7,14 +7,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
 
-        // Set background to gray
-        FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_GRAYTEXT + 1));
+        RECT r;
+        GetClientRect(hwnd, &r);
+
+        // Window dimensions
+        int width  = r.right  - r.left;
+        int height = r.bottom - r.top;
+
+        // Fill background
+        FillRect(hdc, &r, (HBRUSH)(COLOR_GRAYTEXT + 1));
+
+        // Compute scalable layout
+        int marginX = width  / 10;     // 10% from left
+        int marginY = height / 15;     // 15% from top
+        int spacing = height / 15;     // vertical spacing scales with height
 
         // Draw numbers 1–10
         for (int i = 0; i < 10; i++) {
             char buffer[16];
             wsprintf(buffer, "%d", i + 1);
-            TextOut(hdc, 20, 20 + i * 20, buffer, lstrlen(buffer));
+
+            int x = marginX;
+            int y = marginY + i * spacing;
+
+            TextOut(hdc, x, y, buffer, lstrlen(buffer));
         }
 
         EndPaint(hwnd, &ps);
@@ -48,10 +64,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         "PhrasePad",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 300, 300,
-        NULL,
-        NULL,
-        hInstance,
-        NULL
+        NULL, NULL, hInstance, NULL
     );
 
     ShowWindow(hwnd, nCmdShow);
