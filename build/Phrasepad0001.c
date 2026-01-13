@@ -8,8 +8,7 @@
 
 HWND main_content = NULL;
 HWND first_gen[FIRST_GEN_COUNT] = {0};
-HWND second_gen_left[FIRST_GEN_COUNT] = {0};
-HWND second_gen_right[FIRST_GEN_COUNT] = {0};
+HWND content_window[FIRST_GEN_COUNT] = {0}; // single 2nd_gen per 1st_gen
 
 int scroll_pos = 0;
 
@@ -29,13 +28,7 @@ int GetMargin(HWND hwnd)
 int GetSpacing(HWND hwnd)
 {
     UINT dpi = GetDpiForWindow(hwnd);
-    return MulDiv(10, dpi, 96);   // HALF spacing between 1st_gen windows
-}
-
-int GetSecondGenSpacing(HWND hwnd)
-{
-    UINT dpi = GetDpiForWindow(hwnd);
-    return MulDiv(10, dpi, 96);   // HALF spacing between 2nd_gen siblings
+    return MulDiv(10, dpi, 96);   // spacing between 1st_gen windows
 }
 
 int GetChildHeight(HWND hwnd)
@@ -119,35 +112,23 @@ void SetClipboardText(HWND hwnd, const wchar_t* text)
 }
 
 //
-// Layout 2nd_gen windows inside each 1st_gen
+// Layout single content window inside each 1st_gen
 //
-void LayoutSecondGenWindows(HWND firstGenHwnd, int index)
+void LayoutContentWindow(HWND firstGenHwnd, int index)
 {
     RECT rc;
     GetClientRect(firstGenHwnd, &rc);
 
     int margin = GetMargin(firstGenHwnd);
-    int spacing = GetSecondGenSpacing(firstGenHwnd);
 
-    int totalHeight = rc.bottom - rc.top;
-    int squareSize = totalHeight - 2 * margin;
-    if (squareSize < 0) squareSize = 0;
+    int x = margin;
+    int y = margin;
+    int w = rc.right - rc.left - 2 * margin;
+    int h = rc.bottom - rc.top - 2 * margin;
+    if (w < 0) w = 0;
+    if (h < 0) h = 0;
 
-    // Left 2nd_gen (square)
-    int leftX = margin;
-    int leftY = margin;
-    int leftW = squareSize;
-    int leftH = squareSize;
-
-    // Right 2nd_gen (EDIT, fills remaining width)
-    int rightX = leftX + leftW + spacing;
-    int rightY = margin;
-    int rightW = rc.right - rc.left - rightX - margin;
-    if (rightW < 0) rightW = 0;
-    int rightH = squareSize;
-
-    MoveWindow(second_gen_left[index],  leftX,  leftY,  leftW,  leftH,  TRUE);
-    MoveWindow(second_gen_right[index], rightX, rightY, rightW, rightH, TRUE);
+    MoveWindow(content_window[index], x, y, w, h, TRUE);
 }
 
 //
@@ -172,7 +153,7 @@ void LayoutFirstGenWindows(HWND parent)
                    h,
                    TRUE);
 
-        LayoutSecondGenWindows(first_gen[i], i);
+        LayoutContentWindow(first_gen[i], i);
 
         y += h + spacing;
     }
@@ -227,9 +208,6 @@ void CreateContentWindows(HWND hwnd)
         RGB(0, 200, 200)
     };
 
-    COLORREF second_left_color  = RGB(0, 200, 0);   // green
-    COLORREF second_right_color = RGB(60, 60, 60);  // dark gray
-
     for (int i = 0; i < FIRST_GEN_COUNT; i++)
     {
         first_gen[i] = CreateWindowEx(
@@ -242,18 +220,8 @@ void CreateContentWindows(HWND hwnd)
         );
         SetWindowLongPtr(first_gen[i], GWLP_USERDATA, (LONG_PTR)first_gen_colors[i]);
 
-        second_gen_left[i] = CreateWindowEx(
-            0, L"GenPane", L"",
-            WS_CHILD | WS_VISIBLE,
-            0, 0, 0, 0,
-            first_gen[i], (HMENU)(300 + i),
-            hInst,
-            NULL
-        );
-        SetWindowLongPtr(second_gen_left[i], GWLP_USERDATA, (LONG_PTR)second_left_color);
-
-        // Right 2nd_gen: EDIT control, no border, multiline, wrapping, white text via WM_CTLCOLOREDIT
-        second_gen_right[i] = CreateWindowEx(
+        // Single full-width content window: EDIT control, multiline, wrapping
+        content_window[i] = CreateWindowEx(
             0, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE |
             ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | ES_LEFT,
@@ -262,7 +230,7 @@ void CreateContentWindows(HWND hwnd)
             hInst,
             NULL
         );
-        // We don't store color here; color is handled in WM_CTLCOLOREDIT.
+        // Color is handled via WM_CTLCOLOREDIT in GenPaneProc.
     }
 }
 
@@ -385,10 +353,10 @@ LRESULT CALLBACK GenPaneProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             HDC hdc = (HDC)wParam;
             HWND hEdit = (HWND)lParam;
 
-            // Check if this edit is one of our right 2nd_gen windows
+            // If this edit is one of our content windows, style it
             for (int i = 0; i < FIRST_GEN_COUNT; i++)
             {
-                if (hEdit == second_gen_right[i])
+                if (hEdit == content_window[i])
                 {
                     static HBRUSH darkBrush = NULL;
                     if (!darkBrush)
@@ -418,7 +386,7 @@ void FillSlotFromClipboard(int index, HWND hwnd)
     if (!text)
         return;
 
-    SetWindowText(second_gen_right[index], text);
+    SetWindowText(content_window[index], text);
 
     free(text);
 }
@@ -428,7 +396,7 @@ void SetClipboardFromSlot(int index, HWND hwnd)
     if (index < 0 || index >= FIRST_GEN_COUNT)
         return;
 
-    int len = GetWindowTextLength(second_gen_right[index]);
+    int len = GetWindowTextLength(content_window[index]);
     if (len <= 0)
         return;
 
@@ -436,7 +404,7 @@ void SetClipboardFromSlot(int index, HWND hwnd)
     if (!buffer)
         return;
 
-    GetWindowText(second_gen_right[index], buffer, len + 1);
+    GetWindowText(content_window[index], buffer, len + 1);
     SetClipboardText(hwnd, buffer);
 
     free(buffer);
@@ -498,7 +466,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
 
         case WM_MOUSEWHEEL:
-            // Forward wheel to main_content so scroll logic stays there
             if (main_content)
                 SendMessage(main_content, WM_MOUSEWHEEL, wParam, lParam);
             return 0;
@@ -513,8 +480,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             for (int i = 0; i < FIRST_GEN_COUNT; i++)
             {
                 DrawOutline(hwnd, hdc, first_gen[i]);
-                DrawOutline(hwnd, hdc, second_gen_left[i]);
-                DrawOutline(hwnd, hdc, second_gen_right[i]);
+                DrawOutline(hwnd, hdc, content_window[i]);
             }
 
             EndPaint(hwnd, &ps);
@@ -522,7 +488,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
 
         case WM_DESTROY:
-            // Unregister hotkeys and let OS destroy controls (slots cleared)
+            // Unregister hotkeys; controls are destroyed, contents cleared
             for (int i = 0; i < FIRST_GEN_COUNT; i++)
             {
                 UnregisterHotKey(hwnd, 100 + i);
@@ -560,7 +526,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE prev, PWSTR cmd, int show)
     HWND hwnd = CreateWindowEx(
         0,
         L"ScrollableContentDemo",
-        L"PhrasePad Layout Demo",
+        L"PhrasePad Layout Demo (Single Content Window)",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         800, 600,
