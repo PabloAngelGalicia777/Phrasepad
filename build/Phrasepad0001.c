@@ -1,6 +1,8 @@
 #define UNICODE
 #define _UNICODE
 #include <windows.h>
+#include <wchar.h>
+#include <stdlib.h>
 
 #define FIRST_GEN_COUNT 7
 
@@ -16,7 +18,7 @@ LRESULT CALLBACK GenPaneProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 WNDPROC oldMainContentProc = NULL;
 
 //
-// DPI‑aware margins
+// DPI-aware geometry helpers
 //
 int GetMargin(HWND hwnd)
 {
@@ -43,6 +45,80 @@ int GetChildHeight(HWND hwnd)
 }
 
 //
+// Clipboard helpers
+//
+wchar_t* GetClipboardText(HWND hwnd)
+{
+    if (!OpenClipboard(hwnd))
+        return NULL;
+
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (!hData)
+    {
+        CloseClipboard();
+        return NULL;
+    }
+
+    wchar_t* pszText = (wchar_t*)GlobalLock(hData);
+    if (!pszText)
+    {
+        CloseClipboard();
+        return NULL;
+    }
+
+    size_t len = wcslen(pszText) + 1;
+    wchar_t* copy = (wchar_t*)malloc(len * sizeof(wchar_t));
+    if (!copy)
+    {
+        GlobalUnlock(hData);
+        CloseClipboard();
+        return NULL;
+    }
+
+    wcscpy(copy, pszText);
+
+    GlobalUnlock(hData);
+    CloseClipboard();
+
+    return copy; // caller must free()
+}
+
+void SetClipboardText(HWND hwnd, const wchar_t* text)
+{
+    if (!text)
+        return;
+
+    if (!OpenClipboard(hwnd))
+        return;
+
+    EmptyClipboard();
+
+    size_t len = wcslen(text) + 1;
+    SIZE_T bytes = len * sizeof(wchar_t);
+
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!hMem)
+    {
+        CloseClipboard();
+        return;
+    }
+
+    wchar_t* dest = (wchar_t*)GlobalLock(hMem);
+    if (!dest)
+    {
+        GlobalFree(hMem);
+        CloseClipboard();
+        return;
+    }
+
+    memcpy(dest, text, bytes);
+    GlobalUnlock(hMem);
+
+    SetClipboardData(CF_UNICODETEXT, hMem);
+    CloseClipboard();
+}
+
+//
 // Layout 2nd_gen windows inside each 1st_gen
 //
 void LayoutSecondGenWindows(HWND firstGenHwnd, int index)
@@ -63,14 +139,14 @@ void LayoutSecondGenWindows(HWND firstGenHwnd, int index)
     int leftW = squareSize;
     int leftH = squareSize;
 
-    // Right 2nd_gen (fills remaining width)
+    // Right 2nd_gen (EDIT, fills remaining width)
     int rightX = leftX + leftW + spacing;
     int rightY = margin;
     int rightW = rc.right - rc.left - rightX - margin;
     if (rightW < 0) rightW = 0;
     int rightH = squareSize;
 
-    MoveWindow(second_gen_left[index], leftX, leftY, leftW, leftH, TRUE);
+    MoveWindow(second_gen_left[index],  leftX,  leftY,  leftW,  leftH,  TRUE);
     MoveWindow(second_gen_right[index], rightX, rightY, rightW, rightH, TRUE);
 }
 
@@ -176,15 +252,17 @@ void CreateContentWindows(HWND hwnd)
         );
         SetWindowLongPtr(second_gen_left[i], GWLP_USERDATA, (LONG_PTR)second_left_color);
 
+        // Right 2nd_gen: EDIT control, no border, multiline, wrapping, white text via WM_CTLCOLOREDIT
         second_gen_right[i] = CreateWindowEx(
-            0, L"GenPane", L"",
-            WS_CHILD | WS_VISIBLE,
+            0, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE |
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | ES_LEFT,
             0, 0, 0, 0,
             first_gen[i], (HMENU)(400 + i),
             hInst,
             NULL
         );
-        SetWindowLongPtr(second_gen_right[i], GWLP_USERDATA, (LONG_PTR)second_right_color);
+        // We don't store color here; color is handled in WM_CTLCOLOREDIT.
     }
 }
 
@@ -279,7 +357,7 @@ LRESULT CALLBACK MainContentProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 }
 
 //
-// Paint handler for all GenPane windows
+// Paint handler and color handler for GenPane windows
 //
 LRESULT CALLBACK GenPaneProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -301,9 +379,67 @@ LRESULT CALLBACK GenPaneProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             EndPaint(hwnd, &ps);
         }
         return 0;
+
+        case WM_CTLCOLOREDIT:
+        {
+            HDC hdc = (HDC)wParam;
+            HWND hEdit = (HWND)lParam;
+
+            // Check if this edit is one of our right 2nd_gen windows
+            for (int i = 0; i < FIRST_GEN_COUNT; i++)
+            {
+                if (hEdit == second_gen_right[i])
+                {
+                    static HBRUSH darkBrush = NULL;
+                    if (!darkBrush)
+                        darkBrush = CreateSolidBrush(RGB(60, 60, 60));
+
+                    SetTextColor(hdc, RGB(255, 255, 255));
+                    SetBkColor(hdc, RGB(60, 60, 60));
+                    return (LRESULT)darkBrush;
+                }
+            }
+        }
+        break;
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+//
+// Slot operations
+//
+void FillSlotFromClipboard(int index, HWND hwnd)
+{
+    if (index < 0 || index >= FIRST_GEN_COUNT)
+        return;
+
+    wchar_t* text = GetClipboardText(hwnd);
+    if (!text)
+        return;
+
+    SetWindowText(second_gen_right[index], text);
+
+    free(text);
+}
+
+void SetClipboardFromSlot(int index, HWND hwnd)
+{
+    if (index < 0 || index >= FIRST_GEN_COUNT)
+        return;
+
+    int len = GetWindowTextLength(second_gen_right[index]);
+    if (len <= 0)
+        return;
+
+    wchar_t* buffer = (wchar_t*)malloc((len + 1) * sizeof(wchar_t));
+    if (!buffer)
+        return;
+
+    GetWindowText(second_gen_right[index], buffer, len + 1);
+    SetClipboardText(hwnd, buffer);
+
+    free(buffer);
 }
 
 //
@@ -314,14 +450,57 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (msg)
     {
         case WM_CREATE:
+        {
             CreateContentWindows(hwnd);
+
+            // Register hotkeys for slots 1–7
+            // Ctrl + Alt + N : fill slot
+            // Ctrl + Shift + N : override clipboard from slot
+            for (int i = 0; i < FIRST_GEN_COUNT; i++)
+            {
+                RegisterHotKey(hwnd,
+                               100 + i, // id for fill
+                               MOD_CONTROL | MOD_ALT,
+                               '1' + i);
+
+                RegisterHotKey(hwnd,
+                               200 + i, // id for override
+                               MOD_CONTROL | MOD_SHIFT,
+                               '1' + i);
+            }
             return 0;
+        }
 
         case WM_SIZE:
             MoveWindow(main_content, 0, 0,
                        LOWORD(lParam), HIWORD(lParam), TRUE);
             LayoutFirstGenWindows(main_content);
             InvalidateRect(hwnd, NULL, TRUE);
+            return 0;
+
+        case WM_HOTKEY:
+        {
+            int id = (int)wParam;
+
+            if (id >= 100 && id < 100 + FIRST_GEN_COUNT)
+            {
+                // Fill slot (Ctrl+Alt+N)
+                int index = id - 100;
+                FillSlotFromClipboard(index, hwnd);
+            }
+            else if (id >= 200 && id < 200 + FIRST_GEN_COUNT)
+            {
+                // Override clipboard from slot (Ctrl+Shift+N)
+                int index = id - 200;
+                SetClipboardFromSlot(index, hwnd);
+            }
+            return 0;
+        }
+
+        case WM_MOUSEWHEEL:
+            // Forward wheel to main_content so scroll logic stays there
+            if (main_content)
+                SendMessage(main_content, WM_MOUSEWHEEL, wParam, lParam);
             return 0;
 
         case WM_PAINT:
@@ -343,6 +522,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
 
         case WM_DESTROY:
+            // Unregister hotkeys and let OS destroy controls (slots cleared)
+            for (int i = 0; i < FIRST_GEN_COUNT; i++)
+            {
+                UnregisterHotKey(hwnd, 100 + i);
+                UnregisterHotKey(hwnd, 200 + i);
+            }
+
             PostQuitMessage(0);
             return 0;
     }
@@ -374,7 +560,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE prev, PWSTR cmd, int show)
     HWND hwnd = CreateWindowEx(
         0,
         L"ScrollableContentDemo",
-        L"1st_gen / 2nd_gen Layout Demo",
+        L"PhrasePad Layout Demo",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         800, 600,
