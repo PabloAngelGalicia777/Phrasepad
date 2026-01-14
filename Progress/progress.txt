@@ -14,3 +14,19 @@ Need:
 1) Read up on how to code the margins, the dividing lines, the writable space within the lines
 2) Read how to scale the mentioned above with the size of the window. 
 3) The first column scales differently to the second column, will look nice.
+
+01.13.25
+
+Restarted from a new approach. Finished the GUI app!!!! I now have 7 cells that can be used to save text to copy and paste. Boilerplate will no longer be a problem. 7 cells to match my working memory capacity.
+
+Future development will be the use of multiple windows for file selection, AI commands, pop quizzes, and a results window. 
+
+The Phrasepad will be a learning app, but in order for it to be a good learning app, I have to continue to learn about the functions of Win32, how humans learn best, how to best use AI for learning instead of feeding a users ego.
+
+It is a one man project, so the end user will probably have to input credible sources to ensure that the user is learning real information instead of AI-made-up knowledge.
+
+Need:
+1) To review current code. A better understanding will make further development of the project faster/easier.
+2) Organization of folders or a way to navigate the local file system.
+3) Learn what AI really is so I can achieve the goal of improving learning and raising my grades. 
+4) How to retain a record of a users understanding to actually progress through the field.
